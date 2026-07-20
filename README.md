@@ -78,7 +78,7 @@ You can add more tests in `tests/test_recommender.py`.
 ## Sample Recommendation Output
 
 ============================================================
-  USER PROFILE
+  USER PROFILE — Happy Pop
 ============================================================
   Favorite genre : pop
   Favorite mood  : happy
@@ -120,6 +120,89 @@ You can add more tests in `tests/test_recommender.py`.
 
 ============================================================
 
+============================================================
+  USER PROFILE — Sad but Hyper (conflicting)
+============================================================
+  Favorite genre : pop
+  Favorite mood  : sad
+  Target energy  : 0.95
+  Prefers sound  : produced
+
+============================================================
+  TOP RECOMMENDATIONS
+============================================================
+
+  1. Gym Hero  —  Max Pulse
+     Score:  64.4 / 100
+       • genre match (+25.0)
+       • energy fit (+29.4)
+       • produced match (+10.0)
+
+  2. Sunrise City  —  Neon Echo
+     Score:  61.1 / 100
+       • genre match (+25.0)
+       • energy fit (+26.1)
+       • produced match (+10.0)
+
+  3. Iron Verdict  —  Ashen Crown
+     Score:  39.7 / 100
+       • energy fit (+29.7)
+       • produced match (+10.0)
+
+  4. Storm Runner  —  Voltline
+     Score:  38.8 / 100
+       • energy fit (+28.8)
+       • produced match (+10.0)
+
+  5. Pulse Chamber  —  Null Sector
+     Score:  37.9 / 100
+       • energy fit (+27.9)
+       • produced match (+10.0)
+
+============================================================
+
+============================================================
+  USER PROFILE — Impossible Energy (out of range)
+============================================================
+  Favorite genre : rock
+  Favorite mood  : intense
+  Target energy  : 5.00
+  Prefers sound  : produced
+
+============================================================
+  TOP RECOMMENDATIONS
+============================================================
+
+  1. Storm Runner  —  Voltline
+     Score:  70.0 / 100
+       • mood match (+35.0)
+       • genre match (+25.0)
+       • energy fit (+0.0)
+       • produced match (+10.0)
+
+  2. Gym Hero  —  Max Pulse
+     Score:  45.0 / 100
+       • mood match (+35.0)
+       • energy fit (+0.0)
+       • produced match (+10.0)
+
+  3. Sunrise City  —  Neon Echo
+     Score:  10.0 / 100
+       • energy fit (+0.0)
+       • produced match (+10.0)
+
+  4. Night Drive Loop  —  Neon Echo
+     Score:  10.0 / 100
+       • energy fit (+0.0)
+       • produced match (+10.0)
+
+  5. Rooftop Lights  —  Indigo Parade
+     Score:  10.0 / 100
+       • energy fit (+0.0)
+       • produced match (+10.0)
+
+============================================================
+
 **Screenshot or video** *(optional)*: <!-- Insert a screenshot or demo video link here -->
 
 ---
@@ -146,6 +229,7 @@ Examples:
 
 You will go deeper on this in your model card.
 
+Some limitations of the recommender is the tiny catalog of songs and it favors mood over genre. 
 ---
 
 ## Reflection
@@ -159,5 +243,5 @@ Write 1 to 2 paragraphs here about what you learned:
 - about how recommenders turn data into predictions
 - about where bias or unfairness could show up in systems like this
 
-
+I learned that recommenders turn users preferences into data which are then used into an algorithm score to make predictions. The recommender has to decide on a couple of items and choose which prefence has more power over another in the scoring. Predictions may lean towards one way that might give predictions that are something a user might not actually like because of a attribute weighting amount. 
 

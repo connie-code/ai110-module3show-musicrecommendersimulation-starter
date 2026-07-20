@@ -1,13 +1,10 @@
 import csv
 from typing import List, Dict, Tuple, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 @dataclass
 class Song:
-    """
-    Represents a song and its attributes.
-    Required by tests/test_recommender.py
-    """
+    """A song and its audio-feature attributes."""
     id: int
     title: str
     artist: str
@@ -23,35 +20,39 @@ class Song:
 
 @dataclass
 class UserProfile:
-    """
-    Represents a user's taste preferences.
-    Required by tests/test_recommender.py
-    """
+    """A listener's taste; the four required fields plus optional numeric-feature targets (neutral defaults keep old profiles working)."""
     favorite_genre: str
     favorite_mood: str
     target_energy: float
     likes_acoustic: bool
+    target_valence: float = 0.5          # musical positivity / cheerfulness
+    target_danceability: float = 0.5     # how groove/dance oriented
+    target_tempo_bpm: float = 120.0      # preferred speed, in BPM
+    target_instrumentalness: float = 0.0 # 1.0 = wants no vocals
+    target_speechiness: float = 0.1      # spoken-word / rap content
 
 class Recommender:
-    """
-    OOP implementation of the recommendation logic.
-    Required by tests/test_recommender.py
-    """
+    """OOP wrapper over the functional scorer so both APIs share one source of truth."""
     def __init__(self, songs: List[Song]):
         self.songs = songs
 
     def recommend(self, user: UserProfile, k: int = 5) -> List[Song]:
-        # TODO: Implement recommendation logic
-        return self.songs[:k]
+        """Return the top-k Songs for `user` (best first) via recommend_songs(), mapped back to Song objects."""
+        user_prefs = asdict(user)
+        song_dicts = [asdict(song) for song in self.songs]
+        ranked = recommend_songs(user_prefs, song_dicts, k=k)
+
+        by_id = {song.id: song for song in self.songs}
+        return [by_id[song_dict["id"]] for song_dict, _score, _explanation in ranked]
 
     def explain_recommendation(self, user: UserProfile, song: Song) -> str:
-        # TODO: Implement explanation logic
-        return "Explanation placeholder"
+        """Return the human-readable scoring breakdown for one song."""
+        _score, reasons = score_song(asdict(user), asdict(song))
+        return ", ".join(reasons)
 
 def load_songs(csv_path: str) -> List[Dict]:
-    """Read the CSV into a list of dicts, keeping text columns as strings and parsing `id` to int and audio features to float."""
-    # Columns that should be numeric; everything else stays a string.
-    int_fields = {"id"}
+    """Read the CSV into dicts, parsing `id` to int and audio features to float (other columns stay strings)."""
+    int_fields = {"id"}  # numeric columns; everything else stays a string
     float_fields = {
         "energy",
         "tempo_bpm",
@@ -78,48 +79,73 @@ def load_songs(csv_path: str) -> List[Dict]:
 
     return songs
 
+# Per-feature point budget; sums to 100 so scores stay on a 0..100 scale (tweak to reweight).
+FEATURE_WEIGHTS = {
+    "mood": 20.0,
+    "genre": 13.0,
+    "energy": 14.0,
+    "valence": 11.0,
+    "danceability": 11.0,
+    "tempo": 10.0,
+    "instrumentalness": 8.0,
+    "speechiness": 7.0,
+    "acoustic": 6.0,
+}
+
+# BPM gap at which tempo closeness hits 0 (tempo isn't 0..1, so it needs its own scale).
+TEMPO_TOLERANCE_BPM = 80.0
+
+
+def _closeness(value: float, target: float, scale: float = 1.0) -> float:
+    """Return 1.0 when value == target, decaying linearly to 0 at `scale` away."""
+    return max(0.0, 1.0 - abs(value - target) / scale)
+
+
 def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
-    """Score one song out of 100 (mood 35 + genre 25 + energy-closeness 30 + acoustic 10), returning (score, reasons)."""
+    """Score a song out of 100 — exact-match on mood/genre, closeness on six audio features, boolean acoustic — returning (score, reasons)."""
     score = 0.0
     reasons: List[str] = []
+    w = FEATURE_WEIGHTS
 
-    # 1. Mood match (35 points) — exact match on the categorical mood.
+    # Categorical: exact-match awards.
     if song["mood"] == user_prefs["favorite_mood"]:
-        score += 35.0
-        reasons.append("mood match (+35.0)")
+        score += w["mood"]
+        reasons.append(f"mood match (+{w['mood']:.1f})")
 
-    # 2. Genre match (25 points, soft) — a miss simply forgoes the points.
     if song["genre"] == user_prefs["favorite_genre"]:
-        score += 25.0
-        reasons.append("genre match (+25.0)")
+        score += w["genre"]
+        reasons.append(f"genre match (+{w['genre']:.1f})")
 
-    # 3. Energy closeness (30 points) — highest when the song's energy is near
-    #    target_energy, falling off in either direction. closeness in [0, 1].
-    closeness = 1.0 - abs(song["energy"] - user_prefs["target_energy"])
-    closeness = max(0.0, closeness)
-    energy_points = 30.0 * closeness
-    score += energy_points
-    reasons.append(f"energy fit (+{energy_points:.1f})")
+    # Numeric: points scale with closeness to the user's target. (weight, song col, pref key, default, scale)
+    numeric_features = [
+        ("energy", "energy", "target_energy", 0.5, 1.0),
+        ("valence", "valence", "target_valence", 0.5, 1.0),
+        ("danceability", "danceability", "target_danceability", 0.5, 1.0),
+        ("tempo", "tempo_bpm", "target_tempo_bpm", 120.0, TEMPO_TOLERANCE_BPM),
+        ("instrumentalness", "instrumentalness", "target_instrumentalness", 0.0, 1.0),
+        ("speechiness", "speechiness", "target_speechiness", 0.1, 1.0),
+    ]
+    for weight_key, song_col, pref_key, default_target, scale in numeric_features:
+        target = user_prefs.get(pref_key, default_target)
+        points = w[weight_key] * _closeness(song[song_col], target, scale)
+        score += points
+        reasons.append(f"{weight_key} fit (+{points:.1f})")
 
-    # 4. Acoustic alignment (10 points) — reward when the song's acoustic-ness
-    #    agrees with the user's stated preference.
+    # Acoustic: reward when the song's acoustic/produced nature matches the preference.
     song_is_acoustic = song["acousticness"] > 0.5
     if song_is_acoustic == user_prefs["likes_acoustic"]:
-        score += 10.0
+        score += w["acoustic"]
         label = "acoustic match" if user_prefs["likes_acoustic"] else "produced match"
-        reasons.append(f"{label} (+10.0)")
+        reasons.append(f"{label} (+{w['acoustic']:.1f})")
 
     return score, reasons
 
 def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5) -> List[Tuple[Dict, float, str]]:
-    """Score every song with score_song(), sort by score descending, and return the top `k` as (song, score, explanation) tuples."""
-    # 1. Score every song, building (song, score, explanation) tuples.
+    """Score every song, then return the top `k` as (song, score, explanation) tuples, highest score first."""
     scored: List[Tuple[Dict, float, str]] = []
     for song in songs:
         score, reasons = score_song(user_prefs, song)
-        explanation = ", ".join(reasons)
-        scored.append((song, score, explanation))
+        scored.append((song, score, ", ".join(reasons)))
 
-    # 2. Sort by score (highest first) and keep only the top k.
     ranked = sorted(scored, key=lambda item: item[1], reverse=True)
     return ranked[:k]
